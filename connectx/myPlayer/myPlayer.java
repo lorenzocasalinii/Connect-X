@@ -9,15 +9,15 @@ import java.util.Random;
 public class myPlayer implements CXPlayer {
 	
 	private long start;    
-	private int M;		// numero di righe 
-	private int N;		// numero di colonne
-	private int X;		// numero di pezzi da collegare per vincere
-	private int timeout;		// tempo disponibile per scegliere la mossa
-	private int buffer;			// buffer utilizzato in alphabeta 	
-	private int middleCol;		// indice della colonna centrale
+	private int M;		// number of rows 
+	private int N;		// number of columns
+	private int X;		// number of pieces to connect in order to win
+	private int timeout;		// number of seconds to make the move 
+	private int buffer;			// buffer used by alpha-beta
+	private int middleCol;			// index of the middle column
 	private CXGameState myWin;		
 	private CXGameState yourWin;
-	private boolean P1;		// variabile booleana che indica se siamo il primo player	
+	private boolean P1;				
 	private TranspositionTable transpositionTable;		
 	private ZobristHashing zobristHashing;
 	private Random rand;
@@ -44,337 +44,366 @@ public class myPlayer implements CXPlayer {
 
 	@Override
 	public int selectColumn(CXBoard B) {
-		start = System.currentTimeMillis();				// viene memorizzato il tempo di partenza
+		start = System.currentTimeMillis();  		// stores the start time
 		
-		// conquistare la colonna centrale
-		if(B.numOfMarkedCells() == 0) 
+		// check if we can win immediately
+		for (int col = 0; col < N; col++) {
+			if (!B.fullColumn(col)) {
+				// simulate the move
+				B.markColumn(col);
+				// check if it leads to victory, if yes, remove the move and return that move
+				if (B.gameState() == myWin) {
+					B.unmarkColumn();
+					return col;
+				}
+				// remove the move
+				B.unmarkColumn();
+			}
+		}
+
+		// if we are at the beginning of the match, play to occupy the central column
+		if (B.numOfMarkedCells() == 0)
 			return middleCol;
-		if(B.numOfMarkedCells() == 1) 
+		if (B.numOfMarkedCells() == 1)
 			return middleCol;
-		if(B.getLastMove().j == middleCol && !B.fullColumn(middleCol) && B.numOfMarkedCells() < 5) 
+		if (B.getLastMove().j == middleCol && !B.fullColumn(middleCol) && B.numOfMarkedCells() < 5)
 			return middleCol;
 		
-		// se rimane una sola colonna disponibile allora viene scelta quella
-		Integer [] availableColumns = B.getAvailableColumns();
-		if(availableColumns.length == 1) 
+		// if only one column is available, choose that one
+		Integer[] availableColumns = B.getAvailableColumns();
+		if (availableColumns.length == 1)
 			return availableColumns[0];
 			
-		// la mossa va scelta
-		// viene effettuata una ricerca sul game tree mediante alphabeta utilizzando un approccio iterative deepening
-		int depth = 1;		// la profondità viene settata a 1
-		double bestMoveScore = 0;		// il punteggio della mossa migliore viene settato a 0
-		int bestMove = availableColumns[availableColumns.length/2];		// viene scelta la colonna centrale tra quelle disponibili nel caso in cui alphabeta non trovi una mossa migliore nel tempo disponibile
-		// finchè abbiamo tempo disponibile, aumentiamo la profondità di ricerca del game tree
-		while((System.currentTimeMillis()-start)/1000.0 < timeout - 0.01) {
-			// chiamiamo alphabeta passando come argomenti la tavola, true (per indicare che è il nostro turno), la profondità e alpha e beta inizialmente settati a + e - infinito
-            double moveScore = alphabeta(B, true, depth, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
-			// se dopo aver eseguito alphabeta abbiamo esaurito il tempo disponibile, usciamo dal ciclo
-            if((System.currentTimeMillis() - start) / 1000.0 >= timeout - 0.01) 
+		// otherwise we have to explore the game tree and choose a move
+		// perform a search on the game tree using alpha-beta pruning with iterative deepening
+		int depth = 1;  	// set the depth to 1
+		double bestMoveScore = 0;  		// set the best move score to 0
+		int bestMove = availableColumns[availableColumns.length / 2];  // choose the central column among the available ones in case alpha-beta doesn't find a better move in the available time
+		
+		// as long as we have available time, increase the search depth of the game tree
+		while ((System.currentTimeMillis() - start) / 1000.0 < timeout - 0.01) {
+			// call alphabeta with the board, true (indicating our turn), depth, and initially set alpha and beta to positive and negative infinity
+			double moveScore = alphabeta(B, true, depth, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+			// if we run out of time after alphabeta execution, exit the loop
+			if ((System.currentTimeMillis() - start) / 1000.0 >= timeout - 0.01)
 				break;
-			// aggiorniamo il miglior punteggio trovato
+			// update the best score found
 			bestMoveScore = moveScore;
-			// troviamo la mossa corrispondente al nuovo punteggio calcolato da alphabeta data una certa profondità
+			// find the move corresponding to the new score calculated by alphabeta at a certain depth
 			bestMove = getBestMove(B, true, depth, bestMoveScore);
-			depth++;		// incrementiamo la profondità	
-        }
+			depth++;  // increment the depth
+		}
 		return bestMove;
 	}
+	
 
 	private double alphabeta(CXBoard B, boolean myTurn, int depth, double alpha, double beta) {
-		double eval;		// valore migliore trovato
+		double eval;  	// best value found
 		Integer[] availableColumns = B.getAvailableColumns();
-		long boardHash = zobristHashing.calculateBoardHash(B);		// viene calcolata la chiave corrispondente all'attuale gamestate mediante Zobrist Hashing		
-    	if(transpositionTable.contains(boardHash))		// viene controllata se la tabella hash contiene già la valutazione dell'attuale gamestate
-            return transpositionTable.retrieve(boardHash);		// in caso positivo ritorna direttamente quel valore
-		// se si raggiunge profondità 0 o se la partita non è più aperta o se scade il tempo disponibile allora viene valutato il gamestate
-		if(depth <= 0 || B.gameState() != CXGameState.OPEN || (System.currentTimeMillis() - start) / 1000.0 > timeout * (buffer / 100.0)) {
+		long boardHash = zobristHashing.calculateBoardHash(B);  	// calculate the key corresponding to the current game state using Zobrist Hashing
+		
+		if (transpositionTable.contains(boardHash))  		// check if the hash table already contains the evaluation of the current game state
+			return transpositionTable.retrieve(boardHash);  	// if positive, return that value directly
+		
+		// if depth reaches 0 or the game is no longer open or the available time expires, then evaluate the game state
+		if (depth <= 0 || B.gameState() != CXGameState.OPEN || (System.currentTimeMillis() - start) / 1000.0 > timeout * (buffer / 100.0)) {
 			eval = evaluate(B);
 		}
-		// è il nostro turno quindi si cerca di massimizzare il valore
-		else if(myTurn) {
+
+		// if it's our turn try to maximize the value
+		else if (myTurn) {
 			eval = Double.NEGATIVE_INFINITY;
-			// si controllano le colonne disponibili
-			for(int col : availableColumns) {
-				// simuliamo la mossa
+			// check available columns
+			for (int col : availableColumns) {
+				// simulate the move
 				B.markColumn(col);
-				// aggiorniamo il valore di eval prendendo il valore massimo tra i figli
+				// update the eval value by taking the maximum value among the children
 				eval = Math.max(eval, alphabeta(B, false, depth - 1, alpha, beta));
-				// aggiorniamo il valore di alpha prendendo il massimo tra alpha ed eval
+				// update the alpha value by taking the maximum between alpha and eval
 				alpha = Math.max(eval, alpha);
-				// rimuoviamo la mossa 
+				// remove the move
 				B.unmarkColumn();
-				// controlliamo se è possibile effettuare potature
-				if (beta <= alpha) {
-					break;
-				}
-			}
-		} 
-		// è il turno dell'avversario quindi si cerca di minimizzare il valore 
-		else {
-			eval = Double.POSITIVE_INFINITY;
-			// si controllano le colonne disponibili
-			for(int col : availableColumns) {
-				// simuliamo la mossa
-				B.markColumn(col);
-				// aggiorniamo il valore di eval prendendo il valore minimo tra i figli
-				eval = Math.min(eval, alphabeta(B, true, depth - 1, alpha, beta));
-				// aggiorniamo il valore di beta prendendo il minimo tra beta ed eval
-				beta = Math.min(eval, beta);
-				// rimuoviamo la mossa 
-				B.unmarkColumn();
-				// controlliamo se è possibile effettuare potature
+				// check if pruning is possible
 				if (beta <= alpha) {
 					break;
 				}
 			}
 		}
-		transpositionTable.store(boardHash, eval);		// prima di ritornare il valore, viene inserito nella transposition table
-		return eval;
-	}
-	
-	private int getBestMove(CXBoard B, boolean myTurn, int depth, double targetScore) {
-		Integer [] availableColumns = B.getAvailableColumns();		
-		int bestMove = availableColumns[rand.nextInt(availableColumns.length)]; 
-		double scoreThreshold = 1;		// mettiamo una soglia in modo che la ricerca del punteggio non debba essere esattamente precisa ma rientri in un certo intervallo
-		double bestMoveScore = myTurn ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;	// il punteggio migliore viene settato a + o - infinito a seconda di quale player stia giocando
-		// se abbiamo esaurito il tempo disponibile ritorniamo il punteggio migliore
-		if((System.currentTimeMillis() - start) / 1000.0 < timeout) {
-			// si scorre tra le colonne disponibili 
-			for(int col : availableColumns) {
-				// simuliamo fare la mossa 
+		// if it's the opponent's turn try to minimize the value
+		else {
+			eval = Double.POSITIVE_INFINITY;
+			// check available columns
+			for (int col : availableColumns) {
+				// simulate the move
 				B.markColumn(col);
-				// calcoliamo il punteggio della nuova mossa con alphabeta 
-				double moveScore = alphabeta(B, !myTurn, depth - 1, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
-				// rimuoviamo la mossa 
+				// update the eval value by taking the minimum value among the children
+				eval = Math.min(eval, alphabeta(B, true, depth - 1, alpha, beta));
+				// update the beta value by taking the minimum between beta and eval
+				beta = Math.min(eval, beta);
+				// remove the move
 				B.unmarkColumn();
-				// controlliamo se il punteggio trovato coincide con quello che stiamo cercando
-				if(Math.abs(moveScore - targetScore) <= scoreThreshold) 
+				// check if pruning is possible
+				if (beta <= alpha) {
+					break;
+				}
+			}
+		}
+		transpositionTable.store(boardHash, eval);  // before returning the value, store it in the transposition table
+		return eval;
+	}	
+	
+
+	private int getBestMove(CXBoard B, boolean myTurn, int depth, double targetScore) {
+		Integer[] availableColumns = B.getAvailableColumns();		
+		int bestMove = availableColumns[rand.nextInt(availableColumns.length)];
+		double scoreThreshold = 1;  	// set a threshold so that the search for the score doesn't have to be exactly precise but falls within a certain range
+		double bestMoveScore = myTurn ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;  		// the best score is set to + or - infinity depending on which player is playing
+		
+		// if we have no available time left, return the best score
+		if ((System.currentTimeMillis() - start) / 1000.0 < timeout) {
+			// iterate through available columns
+			for (int col : availableColumns) {
+				// simulate making the move
+				B.markColumn(col);
+				// calculate the score of the new move with alphabeta
+				double moveScore = alphabeta(B, !myTurn, depth - 1, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+				// remove the move
+				B.unmarkColumn();
+				// check if the found score matches the one we are looking for
+				if (Math.abs(moveScore - targetScore) <= scoreThreshold)
 					return col;
-				// se il punteggio non coincide ma è migliore di quello trovato precendentemente allora si aggiorna
-				if((myTurn && moveScore > bestMoveScore) || (!myTurn && moveScore < bestMoveScore)) {
+				// if the score doesn't match but is better than the previously found one, update it
+				if ((myTurn && moveScore > bestMoveScore) || (!myTurn && moveScore < bestMoveScore)) {
 					bestMoveScore = moveScore;
 					bestMove = col;
 				}
-			} 
+			}
 		}
 		return bestMove;
 	}
 
+
 	private double evaluate(CXBoard B) {
-		// se il gamestate attuale fa vincere noi, ritorniamo + infinito
-		if(B.gameState() == myWin) 
+		// if the current game state leads to our win, return positive infinity
+		if (B.gameState() == myWin)
 			return Double.POSITIVE_INFINITY;
-		// se il gamestate attuale fa vincere l'avversario, ritorniamo - infinito
-		if(B.gameState() == yourWin) 
+		// if the current game state leads to the opponent's win, return negative infinity
+		if (B.gameState() == yourWin)
 			return Double.NEGATIVE_INFINITY;
-		// se il gamestate attuale fa pareggiare, ritorniamo 0
-		else if(B.gameState() == CXGameState.DRAW)
+		// if the current game state leads to a draw, return 0
+		else if (B.gameState() == CXGameState.DRAW)
 			return 0.0;
-		// altrimenti ritorniamo un valore a seconda della posizione della configurazione delle celle
-		else{
-			boolean myThreats = checkForMajorThreats(B, P1 ? true : false);			// controlliamo se possiamo vincere al prossimo turno
-			if(myThreats)
-				return Double.POSITIVE_INFINITY;		
-			boolean yourThreats = checkForMajorThreats(B, P1 ? false : true);		// controlliamo se possiamo perdere al prossimo turno
-			if(yourThreats)
-				return Double.NEGATIVE_INFINITY;	
-			double connections = countConnections(B, P1 ? true : false);		// controlliamo le sequenze nella tavola di gioco
+		// otherwise, return a value based on the configuration of the cells
+		else {
+			boolean myThreats = checkForMajorThreats(B, P1 ? true : false);  // check if we can win on the next move
+			if (myThreats)
+				return Double.POSITIVE_INFINITY;
+			boolean yourThreats = checkForMajorThreats(B, P1 ? false : true);  // check if we can lose on the next move
+			if (yourThreats)
+				return Double.NEGATIVE_INFINITY;
+			double connections = countConnections(B, P1 ? true : false);  // check the sequences on the game board
 			return connections;
 		}
-	}
+	}	
+
 
 	private double countConnections(CXBoard B, boolean myTurn) {
 		double bestScore;
-		if (myTurn) 
-			bestScore = Double.NEGATIVE_INFINITY; 
-		else 
-			bestScore = Double.POSITIVE_INFINITY; 
+		// initialize bestScore depending on who's playing 
+		if (myTurn)
+			bestScore = Double.NEGATIVE_INFINITY;
+		else
+			bestScore = Double.POSITIVE_INFINITY;
+		
+		// iterate through the columns
 		for (int col = 0; col < N; col++) {
-			if (!B.fullColumn(col)) { 
-				// simuliamo la mossa
+			if (!B.fullColumn(col)) {
+				// simulate the move
 				B.markColumn(col);
 				double colScore = 0.0;
-				// contiamo le nostre connessioni
+				// count our connections
 				colScore += countRows(B, myTurn);
 				colScore += countDiagonals(B, myTurn);
 				colScore += countColumns(B, myTurn);
-				// contiamo le connessioni dell'avversario 
+				// count opponent's connections
 				colScore -= countRows(B, !myTurn);
 				colScore -= countDiagonals(B, !myTurn);
 				colScore -= countColumns(B, !myTurn);
-				// se il punteggio è migliore di quello trovato fino ad ora, allora lo aggiorniamo
-				if((myTurn && colScore > bestScore) || (!myTurn && colScore < bestScore)) {
+				// if the score is better than what has been found so far, update it
+				if ((myTurn && colScore > bestScore) || (!myTurn && colScore < bestScore)) {
 					bestScore = colScore;
 				}
-				// rimuoviamo la mossa
+				// remove the move
 				B.unmarkColumn();
 			}
 		}
 		return bestScore;
 	}
 
-	//ritorna la altezza massima fra tutte colonne di gioco
+
+	// Returns the maximum height among all columns
 	private int highestColumn(CXBoard B) {
 		int max = 0;
 		int count;
 		int row;
 		int col = 0;
-		// scorriamo fra tutte le colonne
-		while(col < N) {
+		// iterate through all columns
+		while (col < N) {
 			count = 0;
 			row = M - 1;
-			// partiamo dalla riga più in basso
-			while(row >= 0) {
-				// se la cella non è libera, incrementiamo il contatore
-				if(B.cellState(row, col) != CXCellState.FREE) {
+			// start from the bottom row
+			while (row >= 0) {
+				// if the cell is not free, increment the counter.
+				if (B.cellState(row, col) != CXCellState.FREE) {
 					count++;
 					row--;
-				}		
-				// altrimenti andiamo alla prossima colonna
-				else
+				} else {
+					// Move to the next column if the cell is free.
 					break;
+				}
 			}
-			// aggiorniamo l'altezza massima
-			if(count > max) 
+			// update the maximum height
+			if (count > max)
 				max = count;
-			if(count == M)
+			if (count == M)
 				return M;
 			col++;
 		}
 		return max;
 	}
 
-	// controlla le connessioni delle righe
+
+	// Checks the formed connections in rows and calculate a score
 	private double countRows(CXBoard B, boolean myTurn) {
 		CXCellState myPlayer = myTurn ? CXCellState.P1 : CXCellState.P2;
 		CXCellState otherPlayer = myTurn ? CXCellState.P2 : CXCellState.P1;
 		double rowScore = 0.0;
-		int maxHeight = M - highestColumn(B);			// prende l'altezza massima fra tutte le colonne 
-		for(int row = M - 1; row >= maxHeight; row--) {
-			for(int col = 0; col <= N - X; col++) {
+		int maxHeight = M - highestColumn(B); 		// Get the maximum height among all columns
+		
+		for (int row = M - 1; row >= maxHeight; row--) {
+			for (int col = 0; col <= N - X; col++) {
 				int myPieces = 0;
 				int myPieceLastPos = -1;
 				int freeSpaces = 0;
 				int freeSpaceFirstPos = -1;
 				int freeSpaceLastPos = -1;
-				for(int i = 0; i < X; i++) {			// assumiamo X = 4 ma funziona pure con altri valori di X
+				
+				// to understand better let's assume X = 4, however it works with any X value  
+				for (int i = 0; i < X; i++) {
 					int currentCol = col + i;
-					if(B.cellState(row, currentCol) == myPlayer) {
+
+					if (B.cellState(row, currentCol) == myPlayer) {
 						myPieces++;
 						myPieceLastPos = i;
-						// scenario FREE P1 FREE P1
-						if(myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == X - 2) {
-							if(currentCol < N - 1) {
-								if(B.cellState(row, currentCol + 1) == CXCellState.FREE) {
+
+						// Scenario: FREE P1 FREE P1
+						if (myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == X - 2) {
+							if (currentCol < N - 1) {
+								if (B.cellState(row, currentCol + 1) == CXCellState.FREE) {
 									rowScore += 10000;
-								}
-								else {
+								} else {
 									rowScore += 10;
 								}
 								col++;
-							}
-							else {
+							} else {
 								rowScore += 10;
 							}
 							break;
 						}
-						// scenario FREE FREE P1 P1 
-						if(myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == 1) {
-							if(currentCol < N - 1) {
-								if(B.cellState(row, currentCol + 1) == CXCellState.FREE) {
+
+						// Scenario: FREE FREE P1 P1
+						if (myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == 1) {
+							if (currentCol < N - 1) {
+								if (B.cellState(row, currentCol + 1) == CXCellState.FREE) {
 									rowScore += 10000;
-								}
-								else {
+								} else {
 									rowScore += 10;
 								}
 								col++;
-							}
-							else {
+							} else {
 								rowScore += 10;
 							}
 							break;
 						}
-						// scenario P1 FREE FREE P1
-						if(myPieces == X - 2 && freeSpaces == 2) {
+
+						// Scenario: P1 FREE FREE P1
+						if (myPieces == X - 2 && freeSpaces == 2) {
 							rowScore += 10;
 							break;
 						}
-						// scenario FREE P1 P1 P1 				
-						if(myPieces == X - 1 && freeSpaces == 1 && freeSpaceFirstPos == 0) {
-							if(currentCol < N - 1) {
-								if(B.cellState(row, currentCol + 1) == CXCellState.FREE) {
+
+						// Scenario: FREE P1 P1 P1
+						if (myPieces == X - 1 && freeSpaces == 1 && freeSpaceFirstPos == 0) {
+							if (currentCol < N - 1) {
+								if (B.cellState(row, currentCol + 1) == CXCellState.FREE) {
 									return 100000;
-								}
-								else {
+								} else {
 									rowScore += 1000;
 								}
 								col++;
-							}
-							else {
+							} else {
 								rowScore += 1000;
 							}
 							break;
 						}
-						// scenario P1 FREE P1 P1 oppure scenario P1 P1 FREE P1
-						if(myPieces == X - 1 && freeSpaces == 1) {
+
+						// Scenario: P1 FREE P1 P1 or Scenario: P1 P1 FREE P1
+						if (myPieces == X - 1 && freeSpaces == 1) {
 							rowScore += 1000;
 							break;
 						}
-					}
-					else if(B.cellState(row, currentCol) == otherPlayer) {
+					} else if (B.cellState(row, currentCol) == otherPlayer) {
 						break;
-					}
-					else if(B.cellState(row, currentCol) == CXCellState.FREE){
-						if(freeSpaces == 0) {
+					} else if (B.cellState(row, currentCol) == CXCellState.FREE) {
+						if (freeSpaces == 0) {
 							freeSpaceFirstPos = i;
-						}
-						else if(freeSpaces >= X - 2) {
-							if(myPieces > 0) {
+						} else if (freeSpaces >= X - 2) {
+							if (myPieces > 0) {
 								rowScore += 1;
 							}
 							break;
 						}
 						freeSpaces++;
 						freeSpaceLastPos = i;
-						// scenario P1 P1 P1 FREE
-						if(myPieces == X - 1) {
-							if(col != 0) {
-								if(B.cellState(row, currentCol - X) == CXCellState.FREE) {
+
+						// Scenario: P1 P1 P1 FREE
+						if (myPieces == X - 1) {
+							if (col != 0) {
+								if (B.cellState(row, currentCol - X) == CXCellState.FREE) {
 									return 100000;
-								}
-								else {
+								} else {
 									rowScore += 1000;
 								}
-							}
-							else {
+							} else {
 								rowScore += 1000;
 							}
 							break;
 						}
-						// scenario FREE P1 P1 FREE
-						if(myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2 && freeSpaceFirstPos == 0) {
-							if(currentCol != N - 1) {
-								if(B.cellState(row, currentCol + 1) == CXCellState.FREE) {
+
+						// Scenario: FREE P1 P1 FREE
+						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2 && freeSpaceFirstPos == 0) {
+							if (currentCol != N - 1) {
+								if (B.cellState(row, currentCol + 1) == CXCellState.FREE) {
 									rowScore += 10000;
-								}
-								else {
+								} else {
 									rowScore += 10;
 								}
 								col++;
-							}
-							else {
+							} else {
 								rowScore += 10;
 							}
 							break;
 						}
-						// scenario P1 FREE P1 FREE
-						if(myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2) {
+
+						// Scenario: P1 FREE P1 FREE
+						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2) {
 							rowScore += 10;
 							break;
 						}
-						// scenario P1 P1 FREE FREE 
-						if(myPieces == X - 2 && freeSpaces == 2) {
-							rowScore+= 10;
+
+						// Scenario: P1 P1 FREE FREE
+						if (myPieces == X - 2 && freeSpaces == 2) {
+							rowScore += 10;
 							break;
 						}
 					}
@@ -383,268 +412,268 @@ public class myPlayer implements CXPlayer {
 		}
 		return rowScore;
 	}
-	
-	// controlla le connessioni delle colonne
+
+
+	// Checks the formed connections in columns and calculate a score
 	private double countColumns(CXBoard B, boolean myTurn) {
-		CXCellState Player = myTurn ? CXCellState.P1 : CXCellState.P2;
+		CXCellState player = myTurn ? CXCellState.P1 : CXCellState.P2;
 		CXCellState otherPlayer = myTurn ? CXCellState.P2 : CXCellState.P1;
 		double colScore = 0.0;
-		for(int col = 0; col < N; col++) {		
+
+		for (int col = 0; col < N; col++) {
 			int myPieces = 0;
-			for(int row = M - 1; row >= X - 1; row--) {	
-				if(B.cellState(row, col) == Player) {
+
+			for (int row = M - 1; row >= X - 1; row--) {
+				if (B.cellState(row, col) == player) {
 					myPieces++;
-				}
-				else if(B.cellState(row, col) == otherPlayer) {
+				} else if (B.cellState(row, col) == otherPlayer) {
 					myPieces = 0;
-				}
-				else {
-					if(myPieces > 0) {
-						colScore += Math.pow(10, myPieces-1);
+				} else {
+					if (myPieces > 0) {
+						colScore += Math.pow(10, myPieces - 1);
 					}
 					break;
 				}
 			}
 		}
+
 		return colScore;
 	}
+
 	
-	// controlla le connessioni di entrambe le diagonali
+	// Checks the formed connections in diagonals and calculate a score
 	private double countDiagonals(CXBoard B, boolean myTurn) {
 		CXCellState myPlayer = myTurn ? CXCellState.P1 : CXCellState.P2;
 		CXCellState otherPlayer = myTurn ? CXCellState.P2 : CXCellState.P1;
 		double diagScore = 0.0;
-		// da in basso a sinistra fino a in alto a destra
-		for(int row = M - 1; row >= X - 1; row--) {
-			for(int col = 0; col <= N - X; col++) {
+
+		// From bottom left to top right
+		for (int row = M - 1; row >= X - 1; row--) {
+			for (int col = 0; col <= N - X; col++) {
 				int myPieces = 0;
 				int myPieceLastPos = -1;
 				int freeSpaces = 0;
 				int freeSpaceFirstPos = -1;
 				int freeSpaceLastPos = -1;
-				for(int i = 0; i < X; i++) {		// assumiamo X = 4 ma funziona pure con altri valori di X
+
+				for (int i = 0; i < X; i++) {
 					int currentCol = col + i;
 					int currentRow = row - i;
-					if(B.cellState(currentRow, currentCol) == myPlayer) {		// se la cella è del nostro giocatore incrementiamo il contatore
+
+					if (B.cellState(currentRow, currentCol) == myPlayer) {
 						myPieces++;
 						myPieceLastPos = i;
-						// scenario FREE P1 FREE P1
-						if(myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == X - 2) {
-							if(currentCol != N - 1 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
+
+						// Scenario FREE P1 FREE P1
+						if (myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == X - 2) {
+							if (currentCol != N - 1 && currentRow != 0) {
+								if (B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
 									diagScore += 10000;
-								}
-								else {
+								} else {
 									diagScore += 10;
 								}
-							}
-							else {
+							} else {
 								diagScore += 10;
 							}
 							break;
 						}
-						// scenario FREE FREE P1 P1 
-						if(myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == 1) {
-							if(currentCol != N - 1 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
+						// Scenario FREE FREE P1 P1
+						if (myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == 1) {
+							if (currentCol != N - 1 && currentRow != 0) {
+								if (B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
 									diagScore += 10000;
-								}
-								else {
+								} else {
 									diagScore += 10;
 								}
-							}
-							else {
+							} else {
 								diagScore += 10;
 							}
 							break;
 						}
-						// scenario P1 FREE FREE P1 
-						if(myPieces == X - 2 && freeSpaces == 2) {
+						// Scenario P1 FREE FREE P1
+						if (myPieces == X - 2 && freeSpaces == 2) {
 							diagScore += 10;
 							break;
 						}
-						// scenario FREE P1 P1 P1 				
-						if(myPieces == X - 1 && freeSpaces == 1 && freeSpaceFirstPos == 0) {
-							if(currentCol != N - 1 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
+						// Scenario FREE P1 P1 P1
+						if (myPieces == X - 1 && freeSpaces == 1 && freeSpaceFirstPos == 0) {
+							if (currentCol != N - 1 && currentRow != 0) {
+								if (B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
 									return 100000;
-								}
-								else {
+								} else {
 									diagScore += 1000;
 								}
-							}
-							else {
+							} else {
 								diagScore += 1000;
 							}
 							break;
 						}
-						// scenario P1 FREE P1 P1 oppure scenario P1 P1 FREE P1
-						if(myPieces == X - 1 && freeSpaces == 1) {
+						// Scenario P1 FREE P1 P1 or Scenario P1 P1 FREE P1
+						if (myPieces == X - 1 && freeSpaces == 1) {
 							diagScore += 1000;
 							break;
 						}
-					}
-					else if(B.cellState(currentRow, currentCol) == otherPlayer){
+					} else if (B.cellState(currentRow, currentCol) == otherPlayer) {
 						break;
-					}
-					else if(B.cellState(currentRow, currentCol) == CXCellState.FREE){
-						if(freeSpaces == 0) {
+					} else if (B.cellState(currentRow, currentCol) == CXCellState.FREE) {
+						if (freeSpaces == 0) {
 							freeSpaceFirstPos = i;
-						}
-						else if(freeSpaces >= X - 2) {
-							if(myPieces > 0) {
+						} else if (freeSpaces >= X - 2) {
+							if (myPieces > 0) {
 								diagScore += 1;
 							}
 							break;
 						}
 						freeSpaces++;
 						freeSpaceLastPos = i;
-						// scenario FREE P1 P1 FREE
-						if(myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2 && freeSpaceFirstPos == 0) {
-							if(currentCol != N - 1 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
-									diagScore += 10000;
+
+						// Scenario P1 P1 P1 FREE
+						if (myPieces == X - 1) {
+							if (col != 0) {
+								if (B.cellState(currentRow, currentCol - X) == CXCellState.FREE) {
+									return 100000;
+								} else {
+									diagScore += 1000;
 								}
-								else {
+							} else {
+								diagScore += 1000;
+							}
+							break;
+						}
+						// Scenario FREE P1 P1 FREE
+						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2 && freeSpaceFirstPos == 0) {
+							if (currentCol != N - 1) {
+								if (B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
+									diagScore += 10000;
+								} else {
 									diagScore += 10;
 								}
-							}
-							else {
+								col++;
+							} else {
 								diagScore += 10;
 							}
 							break;
 						}
-						// scenario P1 FREE P1 FREE
-						if(myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2) {
+						// Scenario P1 FREE P1 FREE
+						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2) {
 							diagScore += 10;
 							break;
 						}
-						// scenario P1 P1 FREE FREE 
-						if(myPieces == X - 2 && freeSpaces == 2) {
-							diagScore+= 10;
-							break;
-						}
-						// scenario P1 P1 P1 FREE
-						if(myPieces == X - 1) {
-							diagScore += 1000;
+						// Scenario P1 P1 FREE FREE
+						if (myPieces == X - 2 && freeSpaces == 2) {
+							diagScore += 10;
 							break;
 						}
 					}
 				}
 			}
 		}
-		// da in basso a destra fino a in alto a sinistra
-		for(int row = M - 1; row >= X - 1; row--) {
-			for(int col = N - 1; col >= X - 1; col--) {
+
+		// From bottom right to top left
+		for (int row = M - 1; row >= X - 1; row--) {
+			for (int col = N - 1; col >= X - 1; col--) {
 				int myPieces = 0;
 				int freeSpaces = 0;
 				int myPieceLastPos = -1;
 				int freeSpaceFirstPos = -1;
 				int freeSpaceLastPos = -1;
-				for(int i = 0; i < X; i++) {			// assumiamo X = 4 ma funziona pure con altri valori di X
+
+				for (int i = 0; i < X; i++) {
 					int currentCol = col - i;
 					int currentRow = row - i;
-					if(B.cellState(currentRow, currentCol) == myPlayer) {		// se la cella è del nostro giocatore incrementiamo il contatore
+
+					if (B.cellState(currentRow, currentCol) == myPlayer) {
 						myPieces++;
 						myPieceLastPos = i;
-						// scenario FREE P1 FREE P1
-						if(myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == X - 2) {
-							if(currentCol != 0 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
+
+						// Scenario FREE P1 FREE P1
+						if (myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == X - 2) {
+							if (currentCol != 0 && currentRow != 0) {
+								if (B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
 									diagScore += 10000;
-								}
-								else {
+								} else {
 									diagScore += 10;
 								}
-							}
-							else {
+							} else {
 								diagScore += 10;
 							}
 							break;
 						}
-						// scenario FREE FREE P1 P1 
-						if(myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == 1) {
-							if(currentCol != 0 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
+						// Scenario FREE FREE P1 P1
+						if (myPieces == X - 2 && freeSpaces == 2 && freeSpaceFirstPos == 0 && freeSpaceLastPos == 1) {
+							if (currentCol != 0 && currentRow != 0) {
+								if (B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
 									diagScore += 10000;
-								}
-								else {
+								} else {
 									diagScore += 10;
 								}
-							}
-							else {
+							} else {
 								diagScore += 10;
 							}
 							break;
 						}
-						// scenario P1 FREE FREE P1 
-						if(myPieces == X - 2 && freeSpaces == 2) {
+						// Scenario P1 FREE FREE P1
+						if (myPieces == X - 2 && freeSpaces == 2) {
 							diagScore += 10;
 							break;
 						}
-						// scenario FREE P1 P1 P1 				
-						if(myPieces == X - 1 && freeSpaces == 1 && freeSpaceFirstPos == 0) {
-							if(currentCol != 0 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
+						// Scenario FREE P1 P1 P1
+						if (myPieces == X - 1 && freeSpaces == 1 && freeSpaceFirstPos == 0) {
+							if (currentCol != 0 && currentRow != 0) {
+								if (B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
 									return 100000;
-								}
-								else {
+								} else {
 									diagScore += 1000;
 								}
-							}
-							else {
+							} else {
 								diagScore += 1000;
 							}
 							break;
 						}
-						// scenario P1 FREE P1 P1 oppure scenario P1 P1 FREE P1
-						if(myPieces == X - 1 && freeSpaces == 1) {
+						// Scenario P1 FREE P1 P1 or Scenario P1 P1 FREE P1
+						if (myPieces == X - 1 && freeSpaces == 1) {
 							diagScore += 1000;
 							break;
 						}
-					}
-					else if(B.cellState(currentRow, currentCol) == otherPlayer){
+					} else if (B.cellState(currentRow, currentCol) == otherPlayer) {
 						break;
-					}
-					else if(B.cellState(currentRow, currentCol) == CXCellState.FREE){
-						if(freeSpaces == 0) {
+					} else if (B.cellState(currentRow, currentCol) == CXCellState.FREE) {
+						if (freeSpaces == 0) {
 							freeSpaceFirstPos = i;
-						}
-						else if(freeSpaces >= X - 2) {
-							if(myPieces > 0) {
+						} else if (freeSpaces >= X - 2) {
+							if (myPieces > 0) {
 								diagScore += 1;
 							}
 							break;
 						}
 						freeSpaces++;
 						freeSpaceLastPos = i;
-						// scenario FREE P1 P1 FREE
-						if(myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2 && freeSpaceFirstPos == 0) {
-							if(currentCol != 0 && currentRow != 0) {
-								if(B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
+
+						// Scenario FREE P1 P1 FREE
+						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2 && freeSpaceFirstPos == 0) {
+							if (currentCol != 0 && currentRow != 0) {
+								if (B.cellState(currentRow - 1, currentCol - 1) == CXCellState.FREE) {
 									diagScore += 10000;
-								}
-								else {
+								} else {
 									diagScore += 10;
 								}
-							}
-							else {
+							} else {
 								diagScore += 10;
 							}
 							break;
 						}
-						// scenario P1 FREE P1 FREE
-						if(myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2) {
+						// Scenario P1 FREE P1 FREE
+						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2) {
 							diagScore += 10;
 							break;
 						}
-						// scenario P1 P1 FREE FREE 
-						if(myPieces == X - 2 && freeSpaces == 2) {
-							diagScore+= 10;
+						// Scenario P1 P1 FREE FREE
+						if (myPieces == X - 2 && freeSpaces == 2) {
+							diagScore += 10;
 							break;
 						}
-						// scenario P1 P1 P1 FREE
-						if(myPieces == X - 1) {
+						// Scenario P1 P1 P1 FREE
+						if (myPieces == X - 1) {
 							diagScore += 1000;
 							break;
 						}
@@ -655,26 +684,35 @@ public class myPlayer implements CXPlayer {
 		return diagScore;
 	}
 
+
+	// Check for major threats in the current state
 	private boolean checkForMajorThreats(CXBoard B, boolean myTurn) {
 		CXGameState win = myTurn ? CXGameState.WINP1 : CXGameState.WINP2;
-		for(int col = 0; col < N; col++) {
-            if(!B.fullColumn(col)) {
-				// simuliamo la mossa
-                B.markColumn(col); 
-                if(B.gameState() == win) {		// controlliamo se è una mossa che porta alla vittoria
-                    // in caso positivo rimuoviamo la mossa e ritorniamo true
-					B.unmarkColumn(); 
-                    return true; 
-                }
-				// rimuoviamo la mossa
-                B.unmarkColumn(); 
-            }
-        }
-		// se non troviamo nessuna mossa che porta alla vittoria, ritorniamo false
+		
+		// iterate through the columns
+		for (int col = 0; col < N; col++) {
+			if (!B.fullColumn(col)) {
+				// simulate the move
+				B.markColumn(col);
+
+				// check if it leads to victory, if yes, remove the move and return true
+				if (B.gameState() == win) {
+					B.unmarkColumn();
+					return true;
+				}
+
+				// remove the move
+				B.unmarkColumn();
+			}
+		}
+
+		// if no move leads to victory, return false
 		return false;
 	}
 	
+
 	public String playerName() {
 		return "myPlayer";
 	}
+
 }
