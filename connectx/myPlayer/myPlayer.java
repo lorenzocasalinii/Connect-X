@@ -3,12 +3,8 @@ package connectx.myPlayer;
 import connectx.CXPlayer;
 import connectx.CXBoard;
 import connectx.CXGameState;
-import connectx.CXCell;
 import connectx.CXCellState;
-import java.util.Arrays;
 import java.util.Random;
-import java.util.concurrent.TimeoutException;
-import javax.lang.model.util.ElementScanner6;
 
 public class myPlayer implements CXPlayer {
 	
