@@ -711,6 +711,7 @@ public class myPlayer implements CXPlayer {
 	}
 	
 
+	
 	public String playerName() {
 		return "myPlayer";
 	}

@@ -36,5 +36,6 @@ public class TranspositionTable {
     public double retrieve(long hash) {
         return table.get(hash);
     }
+    
 }
 
