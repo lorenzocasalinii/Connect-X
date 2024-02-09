@@ -45,7 +45,7 @@ public class myPlayer implements CXPlayer {
 	@Override
 	public int selectColumn(CXBoard B) {
 		start = System.currentTimeMillis();  		// stores the start time
-		
+
 		// check if we can win immediately
 		for (int col = 0; col < N; col++) {
 			if (!B.fullColumn(col)) {
@@ -527,41 +527,32 @@ public class myPlayer implements CXPlayer {
 						freeSpaces++;
 						freeSpaceLastPos = i;
 
-						// Scenario P1 P1 P1 FREE
-						if (myPieces == X - 1) {
-							if (col != 0) {
-								if (B.cellState(currentRow, currentCol - X) == CXCellState.FREE) {
-									return 100000;
-								} else {
-									diagScore += 1000;
-								}
-							} else {
-								diagScore += 1000;
-							}
-							break;
-						}
-						// Scenario FREE P1 P1 FREE
+						// scenario FREE P1 P1 FREE
 						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2 && freeSpaceFirstPos == 0) {
-							if (currentCol != N - 1) {
+							if (currentCol != N - 1 && currentRow != 0) {
 								if (B.cellState(currentRow - 1, currentCol + 1) == CXCellState.FREE) {
 									diagScore += 10000;
 								} else {
 									diagScore += 10;
 								}
-								col++;
 							} else {
 								diagScore += 10;
 							}
 							break;
 						}
-						// Scenario P1 FREE P1 FREE
+						// scenario P1 FREE P1 FREE
 						if (myPieces == X - 2 && freeSpaces == 2 && myPieceLastPos == X - 2) {
 							diagScore += 10;
 							break;
 						}
-						// Scenario P1 P1 FREE FREE
+						// scenario P1 P1 FREE FREE 
 						if (myPieces == X - 2 && freeSpaces == 2) {
-							diagScore += 10;
+							diagScore+= 10;
+							break;
+						}
+						// scenario P1 P1 P1 FREE
+						if (myPieces == X - 1) {
+							diagScore += 1000;
 							break;
 						}
 					}
